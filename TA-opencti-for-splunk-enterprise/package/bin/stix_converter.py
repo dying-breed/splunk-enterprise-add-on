@@ -432,10 +432,13 @@ def convert_to_incident(alert_params, event):
     return bundle.serialize()
 
 
-def convert_to_sighting(alert_params, event):
+def convert_to_sighting(alert_params, event, connector=None):
     """
     :param alert_params:
     :param event:
+    :param connector: SplunkAppConnectorHelper instance (required when
+        sighting_of_type is "indicator" so the indicator STIX ID can be
+        resolved via the OpenCTI API).
     :return:
     """
     bundle_objects = []
@@ -482,7 +485,37 @@ def convert_to_sighting(alert_params, event):
     bundle_objects.append(where_sighted)
 
     # sighting_of conversion
-    if "_observable" in sighting_of_type:
+    if sighting_of_type == "indicator":
+        # --- Indicator mode (STIX 2.1 compliant) ---
+        # Look up the indicator by its observable value via the OpenCTI API
+        # so sighting_of_ref points to the real indicator SDO.
+        if connector is None:
+            raise Exception(
+                "connector is required when sighting_of_type is 'indicator'"
+            )
+        indicator_stix_id = connector.find_indicator_by_value(sighting_of_value)
+        if indicator_stix_id is None:
+            raise Exception(
+                f"No indicator found in OpenCTI for value: {sighting_of_value}"
+            )
+
+        sighting = stix2.Sighting(
+            id=generate_sighting_id(
+                indicator_stix_id,
+                where_sighted["id"],
+            ),
+            created_by_ref=stix_author.id,
+            description=None,
+            sighting_of_ref=indicator_stix_id,
+            first_seen=event_date,
+            last_seen=event_date,
+            where_sighted_refs=[where_sighted],
+            object_marking_refs=[marking_id],
+            labels=alert_params.get("labels"),
+        )
+        bundle_objects.append(sighting)
+
+    elif "_observable" in sighting_of_type:
         observable_type = sighting_of_type.split("_observable")[0]
 
         # file hash: algorithm is auto-detected from the digest length
