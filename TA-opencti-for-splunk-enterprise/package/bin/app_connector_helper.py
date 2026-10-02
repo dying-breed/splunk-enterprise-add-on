@@ -152,6 +152,44 @@ class SplunkAppConnectorHelper:
             "vulnerabilities": _names_by_type("Vulnerability"),
         }
 
+    def find_indicator_by_value(self, value):
+        """Look up an indicator whose STIX pattern contains *value* and return
+        its standard_id (STIX ID).  Returns ``None`` when no match is found.
+
+        The query uses ``keyword`` search on the indicator name/pattern and
+        filters to entity_type = Indicator.  OpenCTI stores indicator names
+        that mirror the observable value, so a keyword match is reliable.
+
+        :param value: the observable value to search for (IP, domain, URL,
+            hash, etc.)
+        :return: STIX ID string (``indicator--…``) or ``None``
+        """
+        query = """
+        query FindIndicatorByValue($search: String!) {
+          indicators(
+            search: $search,
+            first: 1,
+            orderBy: created_at,
+            orderMode: desc
+          ) {
+            edges {
+              node {
+                id
+                standard_id
+                name
+                pattern
+              }
+            }
+          }
+        }
+        """
+        data = self.graphql_query(query, {"search": value})
+        edges = (data.get("indicators") or {}).get("edges") or []
+        if not edges:
+            return None
+        node = edges[0].get("node") or {}
+        return node.get("standard_id")
+
     def register(self):
         """
         :return:
